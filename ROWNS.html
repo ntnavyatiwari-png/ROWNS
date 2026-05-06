@@ -1,0 +1,1395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>ROWNS Three.js Lane + Pedestrian Study Simulator</title>
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #07111f;
+    font-family: Arial, Helvetica, sans-serif;
+    color: white;
+  }
+
+  #hud {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .panel {
+    position: absolute;
+    background: rgba(8, 15, 28, 0.84);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 14px;
+    padding: 14px 16px;
+    backdrop-filter: blur(8px);
+  }
+
+  #leftPanel { top: 20px; left: 20px; width: 285px; }
+  #rightPanel { top: 20px; right: 20px; width: 320px; }
+  #studyPanel { bottom: 20px; left: 20px; width: 340px; }
+
+  #controls {
+    bottom: 20px;
+    right: 20px;
+    width: 280px;
+    color: rgba(255,255,255,0.65);
+    font-size: 12px;
+    line-height: 1.7;
+  }
+
+  .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 3px;
+  }
+
+  .value {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+
+  #decision {
+    font-size: 42px;
+    font-weight: 900;
+    margin-bottom: 8px;
+  }
+
+  #reason {
+    font-size: 13px;
+    line-height: 1.45;
+    color: rgba(255,255,255,0.74);
+  }
+
+  #alert, #clearPrompt {
+    position: absolute;
+    top: 44%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 14px;
+    padding: 14px 36px;
+    font-size: 26px;
+    font-weight: 900;
+    display: none;
+    text-align: center;
+  }
+
+  #alert {
+    background: rgba(220, 38, 38, 0.94);
+    border: 2px solid #ef4444;
+  }
+
+  #clearPrompt {
+    background: rgba(22, 163, 74, 0.94);
+    border: 2px solid #22c55e;
+  }
+
+  #startScreen, #endScreen {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    background: rgba(4, 9, 18, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .card {
+    width: min(820px, 92vw);
+    background: #101827;
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 18px;
+    padding: 32px;
+    box-shadow: 0 20px 70px rgba(0,0,0,0.5);
+  }
+
+  .card h1 {
+    margin-bottom: 12px;
+    font-size: 30px;
+  }
+
+  .card p, .card li {
+    color: rgba(255,255,255,0.76);
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  .card ul {
+    margin: 14px 0 20px 22px;
+  }
+
+  button {
+    pointer-events: auto;
+    background: #38bdf8;
+    color: #06111f;
+    border: none;
+    border-radius: 9px;
+    padding: 11px 16px;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    margin-right: 10px;
+  }
+
+  .secondary {
+    background: #1f2937;
+    color: white;
+    border: 1px solid rgba(255,255,255,0.18);
+  }
+
+  .hidden {
+    display: none !important;
+  }
+
+  .metricGrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+    margin: 18px 0;
+  }
+
+  .metric {
+    background: #08111f;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    padding: 16px;
+  }
+
+  .metricNum {
+    font-size: 30px;
+    font-weight: 900;
+  }
+
+  .metricText {
+    font-size: 11px;
+    color: rgba(255,255,255,0.55);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+</style>
+</head>
+
+<body>
+
+<div id="startScreen">
+  <div class="card">
+    <h1>ROWNS 3D Lane + Pedestrian Study</h1>
+    <p>
+      This version uses proper lanes, crosswalks, sidewalks, multiple intersection vehicles, and pedestrians.
+      The ego vehicle stays in the right lane, cross traffic moves in correct perpendicular lanes, and ROWNS yields for both cars and people.
+    </p>
+
+    <ul>
+      <li>Drive forward in the right lane toward the intersection.</li>
+      <li>Yield for cross traffic, pedestrians, or blocked crosswalks.</li>
+      <li>Continue once the conflict zone and crosswalk are clear.</li>
+      <li>The simulator logs reaction time, yield behavior, collisions, pedestrian conflicts, and lane position.</li>
+    </ul>
+
+    <button id="startBtn">Start Study</button>
+  </div>
+</div>
+
+<div id="endScreen" class="hidden">
+  <div class="card">
+    <h1>Study Complete</h1>
+
+    <div class="metricGrid">
+      <div class="metric">
+        <div class="metricNum" id="accMetric">0%</div>
+        <div class="metricText">Decision accuracy</div>
+      </div>
+      <div class="metric">
+        <div class="metricNum" id="collisionMetric">0</div>
+        <div class="metricText">Collisions / unsafe conflicts</div>
+      </div>
+      <div class="metric">
+        <div class="metricNum" id="rtMetric">0 ms</div>
+        <div class="metricText">Average first-yield reaction time</div>
+      </div>
+      <div class="metric">
+        <div class="metricNum" id="trialMetric">0</div>
+        <div class="metricText">Trials completed</div>
+      </div>
+    </div>
+
+    <button id="downloadBtn">Download CSV</button>
+    <button class="secondary" onclick="location.reload()">Restart</button>
+  </div>
+</div>
+
+<div id="hud">
+  <div id="leftPanel" class="panel">
+    <div class="label">Speed</div>
+    <div class="value" id="speedVal">0 mph</div>
+
+    <div class="label">Lane position</div>
+    <div class="value" id="laneVal">Right lane</div>
+
+    <div class="label">Conflict zone</div>
+    <div class="value" id="conflictVal">Monitoring</div>
+
+    <div class="label">Active traffic</div>
+    <div class="value" id="trafficVal">0 cars · 0 pedestrians</div>
+  </div>
+
+  <div id="rightPanel" class="panel">
+    <div class="label">ROWNS decision</div>
+    <div id="decision">GO</div>
+    <div id="reason">No active conflict detected.</div>
+  </div>
+
+  <div id="studyPanel" class="panel">
+    <div class="label">Condition</div>
+    <div class="value" id="conditionVal">HUD ON</div>
+
+    <div class="label">Trial</div>
+    <div class="value" id="trialVal">1 / 8</div>
+
+    <div class="label">Scenario</div>
+    <div class="value" id="contextVal">Approaching intersection</div>
+  </div>
+
+  <div id="controls" class="panel">
+    W / ↑ Accelerate<br>
+    S / ↓ Brake<br>
+    A / D Steer<br>
+    Space Emergency brake<br>
+    R Reset trial
+  </div>
+
+  <div id="alert">YIELD</div>
+  <div id="clearPrompt">CLEAR — GO</div>
+</div>
+
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js";
+
+let scene, camera, renderer;
+let ego;
+let trafficCars = [];
+let pedestrians = [];
+
+let speed = 0;
+let steering = 0;
+let studyStarted = false;
+let trialIndex = 0;
+let frameCount = 0;
+
+let trialStartTime = 0;
+let firstConflictTime = null;
+let firstYieldReactionTime = null;
+let participantYielded = false;
+let participantWentAfterClear = false;
+let collisionOccurred = false;
+let pedestrianConflictOccurred = false;
+let laneDepartureOccurred = false;
+let trialEnded = false;
+let hadConflictThisTrial = false;
+
+let lastSystemDecision = "GO";
+let systemDecision = "GO";
+let systemReason = "No active conflict detected.";
+
+const keys = {};
+const logs = [];
+
+const EGO_LANE_X = 4.5;
+const LEFT_LANE_X = -4.5;
+const INTERSECTION_Z = -60;
+const STOP_LINE_Z = -42;
+
+const scenarios = [
+  {
+    condition: "NO_HUD",
+    name: "Clear intersection, lane keeping",
+    expectedConflict: false,
+    cars: [
+      { startX: -120, z: -64.5, speed: 0.10, direction: 1, lane: "far", color: 0x22c55e },
+      { startX: 120, z: -55.5, speed: 0.10, direction: -1, lane: "near", color: 0x22c55e }
+    ],
+    pedestrians: []
+  },
+  {
+    condition: "NO_HUD",
+    name: "Yield for near-lane cross traffic",
+    expectedConflict: true,
+    cars: [
+      { startX: -50, z: -64.5, speed: 0.36, direction: 1, lane: "far", color: 0xef4444 },
+      { startX: 85, z: -55.5, speed: 0.18, direction: -1, lane: "near", color: 0xeab308 }
+    ],
+    pedestrians: []
+  },
+  {
+    condition: "NO_HUD",
+    name: "Yield for pedestrian in crosswalk",
+    expectedConflict: true,
+    cars: [],
+    pedestrians: [
+      { startX: -11, z: -47, speed: 0.045, direction: 1, color: 0xf8fafc }
+    ]
+  },
+  {
+    condition: "NO_HUD",
+    name: "Cars plus pedestrian",
+    expectedConflict: true,
+    cars: [
+      { startX: -56, z: -64.5, speed: 0.32, direction: 1, lane: "far", color: 0xef4444 },
+      { startX: 44, z: -55.5, speed: 0.26, direction: -1, lane: "near", color: 0xf97316 }
+    ],
+    pedestrians: [
+      { startX: 10, z: -47, speed: 0.035, direction: -1, color: 0xf8fafc }
+    ]
+  },
+  {
+    condition: "HUD_ON",
+    name: "Clear intersection, lane keeping",
+    expectedConflict: false,
+    cars: [
+      { startX: -120, z: -64.5, speed: 0.10, direction: 1, lane: "far", color: 0x22c55e },
+      { startX: 120, z: -55.5, speed: 0.10, direction: -1, lane: "near", color: 0x22c55e }
+    ],
+    pedestrians: []
+  },
+  {
+    condition: "HUD_ON",
+    name: "Yield for near-lane cross traffic",
+    expectedConflict: true,
+    cars: [
+      { startX: -50, z: -64.5, speed: 0.36, direction: 1, lane: "far", color: 0xef4444 },
+      { startX: 85, z: -55.5, speed: 0.18, direction: -1, lane: "near", color: 0xeab308 }
+    ],
+    pedestrians: []
+  },
+  {
+    condition: "HUD_ON",
+    name: "Yield for pedestrian in crosswalk",
+    expectedConflict: true,
+    cars: [],
+    pedestrians: [
+      { startX: -11, z: -47, speed: 0.045, direction: 1, color: 0xf8fafc }
+    ]
+  },
+  {
+    condition: "HUD_ON",
+    name: "Cars plus pedestrian",
+    expectedConflict: true,
+    cars: [
+      { startX: -56, z: -64.5, speed: 0.32, direction: 1, lane: "far", color: 0xef4444 },
+      { startX: 44, z: -55.5, speed: 0.26, direction: -1, lane: "near", color: 0xf97316 }
+    ],
+    pedestrians: [
+      { startX: 10, z: -47, speed: 0.035, direction: -1, color: 0xf8fafc }
+    ]
+  }
+];
+
+init();
+animate();
+
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x8ab8dc);
+  scene.fog = new THREE.Fog(0x8ab8dc, 85, 300);
+
+  camera = new THREE.PerspectiveCamera(
+    68,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    500
+  );
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  const hemi = new THREE.HemisphereLight(0xdbeafe, 0x334155, 1.8);
+  scene.add(hemi);
+
+  const sun = new THREE.DirectionalLight(0xffffff, 2.3);
+  sun.position.set(-40, 80, 40);
+  sun.castShadow = true;
+  sun.shadow.camera.left = -140;
+  sun.shadow.camera.right = 140;
+  sun.shadow.camera.top = 140;
+  sun.shadow.camera.bottom = -140;
+  scene.add(sun);
+
+  createWorld();
+  createEgoVehicle();
+
+  window.addEventListener("resize", onResize);
+  document.addEventListener("keydown", onKeyDown);
+  document.addEventListener("keyup", e => {
+    keys[e.key.toLowerCase()] = false;
+  });
+
+  document.getElementById("startBtn").addEventListener("click", startStudy);
+  document.getElementById("downloadBtn").addEventListener("click", downloadCSV);
+
+  updateCamera();
+}
+
+function createWorld() {
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(340, 460),
+    new THREE.MeshStandardMaterial({ color: 0x3f8a45 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.z = -45;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  addRoads();
+  addLaneMarkings();
+  addIntersectionMarkings();
+  addSidewalks();
+  addStopSigns();
+  addBuildings();
+  addTrees();
+}
+
+function addRoads() {
+  const mainRoad = new THREE.Mesh(
+    new THREE.BoxGeometry(20, 0.15, 340),
+    new THREE.MeshStandardMaterial({ color: 0x303746 })
+  );
+  mainRoad.position.set(0, 0.02, -55);
+  mainRoad.receiveShadow = true;
+  scene.add(mainRoad);
+
+  const crossRoad = new THREE.Mesh(
+    new THREE.BoxGeometry(160, 0.16, 20),
+    new THREE.MeshStandardMaterial({ color: 0x444c5c })
+  );
+  crossRoad.position.set(0, 0.04, INTERSECTION_Z);
+  crossRoad.receiveShadow = true;
+  scene.add(crossRoad);
+
+  const conflictZone = new THREE.Mesh(
+    new THREE.BoxGeometry(21, 0.18, 21),
+    new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.22
+    })
+  );
+  conflictZone.position.set(0, 0.13, INTERSECTION_Z);
+  scene.add(conflictZone);
+}
+
+function addLaneMarkings() {
+  const yellowMat = new THREE.MeshStandardMaterial({ color: 0xfacc15 });
+  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc });
+
+  // Main-road center dashed yellow line.
+  for (let z = 90; z > -220; z -= 18) {
+    const dash = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.05, 9), yellowMat);
+    dash.position.set(0, 0.18, z);
+    scene.add(dash);
+  }
+
+  // Main-road outer white boundaries.
+  for (let z = 95; z > -220; z -= 12) {
+    const left = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.06, 8), whiteMat);
+    left.position.set(-9.8, 0.19, z);
+    scene.add(left);
+
+    const right = left.clone();
+    right.position.x = 9.8;
+    scene.add(right);
+  }
+
+  // Cross-road center dashed yellow line.
+  for (let x = -75; x <= 75; x += 16) {
+    const dash = new THREE.Mesh(new THREE.BoxGeometry(8, 0.06, 0.55), yellowMat);
+    dash.position.set(x, 0.20, INTERSECTION_Z);
+    scene.add(dash);
+  }
+
+  // Cross-road outer white boundaries.
+  for (let x = -75; x <= 75; x += 12) {
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(8, 0.06, 0.35), whiteMat);
+    upper.position.set(x, 0.21, INTERSECTION_Z - 9.8);
+    scene.add(upper);
+
+    const lower = upper.clone();
+    lower.position.z = INTERSECTION_Z + 9.8;
+    scene.add(lower);
+  }
+}
+
+function addIntersectionMarkings() {
+  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+
+  // Stop line for ego lane.
+  const stopLine = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.08, 0.9), whiteMat);
+  stopLine.position.set(EGO_LANE_X, 0.24, STOP_LINE_Z);
+  scene.add(stopLine);
+
+  // Crosswalk across ego road before intersection.
+  for (let x = -8; x <= 8; x += 2) {
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.08, 4.2), whiteMat);
+    stripe.position.set(x, 0.25, -47);
+    scene.add(stripe);
+  }
+
+  // Crosswalk on far side.
+  for (let x = -8; x <= 8; x += 2) {
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.08, 4.2), whiteMat);
+    stripe.position.set(x, 0.25, -73);
+    scene.add(stripe);
+  }
+
+  // Stop lines for cross traffic lanes.
+  const crossStopA = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.08, 9.2), whiteMat);
+  crossStopA.position.set(-14, 0.24, -55.5);
+  scene.add(crossStopA);
+
+  const crossStopB = crossStopA.clone();
+  crossStopB.position.set(14, 0.24, -64.5);
+  scene.add(crossStopB);
+}
+
+function addSidewalks() {
+  const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0xb8b8aa });
+
+  const leftSidewalk = new THREE.Mesh(new THREE.BoxGeometry(5, 0.12, 340), sidewalkMat);
+  leftSidewalk.position.set(-13.5, 0.12, -55);
+  scene.add(leftSidewalk);
+
+  const rightSidewalk = leftSidewalk.clone();
+  rightSidewalk.position.x = 13.5;
+  scene.add(rightSidewalk);
+
+  const crossTop = new THREE.Mesh(new THREE.BoxGeometry(160, 0.13, 4.5), sidewalkMat);
+  crossTop.position.set(0, 0.13, INTERSECTION_Z - 13.5);
+  scene.add(crossTop);
+
+  const crossBottom = crossTop.clone();
+  crossBottom.position.z = INTERSECTION_Z + 13.5;
+  scene.add(crossBottom);
+}
+
+function addStopSigns() {
+  addStopSign(-12.5, -44, 0);
+  addStopSign(17, -73, Math.PI);
+}
+
+function addStopSign(x, z, rotY) {
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 4.5, 16),
+    new THREE.MeshStandardMaterial({ color: 0x9ca3af })
+  );
+  pole.position.set(x, 2.25, z);
+  scene.add(pole);
+
+  const sign = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.1, 1.1, 0.08, 8),
+    new THREE.MeshStandardMaterial({ color: 0xdc2626 })
+  );
+  sign.position.set(x, 4.7, z);
+  sign.rotation.x = Math.PI / 2;
+  sign.rotation.z = rotY;
+  scene.add(sign);
+}
+
+function addBuildings() {
+  const colors = [0x334155, 0x475569, 0x1e293b, 0x64748b];
+
+  for (let i = 0; i < 22; i++) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const w = 8 + Math.random() * 8;
+    const h = 8 + Math.random() * 20;
+    const d = 8 + Math.random() * 12;
+
+    const building = new THREE.Mesh(
+      new THREE.BoxGeometry(w, h, d),
+      new THREE.MeshStandardMaterial({ color: colors[i % colors.length] })
+    );
+
+    building.position.set(
+      side * (34 + Math.random() * 36),
+      h / 2,
+      60 - i * 14
+    );
+
+    building.castShadow = true;
+    building.receiveShadow = true;
+    scene.add(building);
+  }
+}
+
+function addTrees() {
+  for (let i = 0; i < 36; i++) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const z = 90 - i * 9;
+    const x = side * (17 + Math.random() * 10);
+
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.25, 0.35, 2.5, 10),
+      new THREE.MeshStandardMaterial({ color: 0x7c4a21 })
+    );
+    trunk.position.set(x, 1.25, z);
+    trunk.castShadow = true;
+    scene.add(trunk);
+
+    const leaves = new THREE.Mesh(
+      new THREE.ConeGeometry(1.8, 4, 12),
+      new THREE.MeshStandardMaterial({ color: 0x166534 })
+    );
+    leaves.position.set(x, 4, z);
+    leaves.castShadow = true;
+    scene.add(leaves);
+  }
+}
+
+function createEgoVehicle() {
+  ego = createCar(0x38bdf8);
+  ego.position.set(EGO_LANE_X, 0.6, 35);
+  scene.add(ego);
+}
+
+function createTrafficCar(config) {
+  const car = createCar(config.color);
+  car.position.set(config.startX, 0.6, config.z);
+  car.rotation.y = config.direction === 1 ? Math.PI / 2 : -Math.PI / 2;
+  car.userData = {
+    startX: config.startX,
+    z: config.z,
+    speed: config.speed,
+    direction: config.direction,
+    active: true
+  };
+  scene.add(car);
+  return car;
+}
+
+function createCar(color) {
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(3.2, 0.9, 5),
+    new THREE.MeshStandardMaterial({ color })
+  );
+  body.position.y = 0.7;
+  body.castShadow = true;
+  group.add(body);
+
+  const cabin = new THREE.Mesh(
+    new THREE.BoxGeometry(2.3, 0.8, 2.2),
+    new THREE.MeshStandardMaterial({ color: 0x111827 })
+  );
+  cabin.position.set(0, 1.45, -0.4);
+  cabin.castShadow = true;
+  group.add(cabin);
+
+  const windshield = new THREE.Mesh(
+    new THREE.BoxGeometry(2.0, 0.05, 1),
+    new THREE.MeshStandardMaterial({ color: 0x93c5fd })
+  );
+  windshield.position.set(0, 1.8, 0.75);
+  group.add(windshield);
+
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x020617 });
+  const wheelPositions = [
+    [-1.7, 0.35, 1.7],
+    [1.7, 0.35, 1.7],
+    [-1.7, 0.35, -1.7],
+    [1.7, 0.35, -1.7]
+  ];
+
+  wheelPositions.forEach(pos => {
+    const wheel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45, 0.45, 0.35, 18),
+      wheelMat
+    );
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(pos[0], pos[1], pos[2]);
+    wheel.castShadow = true;
+    group.add(wheel);
+  });
+
+  return group;
+}
+
+function createPedestrian(config) {
+  const person = new THREE.Group();
+
+  const shirtMat = new THREE.MeshStandardMaterial({ color: config.color });
+  const skinMat = new THREE.MeshStandardMaterial({ color: 0xf2c7a5 });
+  const hairMat = new THREE.MeshStandardMaterial({ color: 0x111827 });
+  const pantsMat = new THREE.MeshStandardMaterial({ color: 0x111827 });
+  const shoeMat = new THREE.MeshStandardMaterial({ color: 0x020617 });
+
+  // Torso
+  const torso = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.28, 0.34, 1.15, 18),
+    shirtMat
+  );
+  torso.position.y = 1.25;
+  torso.castShadow = true;
+  person.add(torso);
+
+  // Neck
+  const neck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.10, 0.12, 0.18, 12),
+    skinMat
+  );
+  neck.position.y = 1.93;
+  neck.castShadow = true;
+  person.add(neck);
+
+  // Head
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.34, 24, 24),
+    skinMat
+  );
+  head.position.y = 2.22;
+  head.castShadow = true;
+  person.add(head);
+
+  // Hair cap
+  const hair = new THREE.Mesh(
+    new THREE.SphereGeometry(0.35, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+    hairMat
+  );
+  hair.position.y = 2.34;
+  hair.castShadow = true;
+  person.add(hair);
+
+  // Face direction marker
+  const face = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.04, 0.03),
+    hairMat
+  );
+  face.position.set(0, 2.23, 0.34);
+  person.add(face);
+
+  // Connected arms: each arm is one pivoting group with sleeve, forearm, and hand.
+  function makeArm(side) {
+    const armGroup = new THREE.Group();
+
+    const sleeve = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.08, 0.09, 0.48, 12),
+      shirtMat
+    );
+    sleeve.position.set(0, -0.24, 0);
+    sleeve.castShadow = true;
+    armGroup.add(sleeve);
+
+    const forearm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.065, 0.075, 0.46, 12),
+      skinMat
+    );
+    forearm.position.set(0, -0.70, 0);
+    forearm.castShadow = true;
+    armGroup.add(forearm);
+
+    const hand = new THREE.Mesh(
+      new THREE.SphereGeometry(0.095, 14, 14),
+      skinMat
+    );
+    hand.position.set(0, -0.96, 0);
+    hand.castShadow = true;
+    armGroup.add(hand);
+
+    armGroup.position.set(side * 0.42, 1.72, 0);
+    armGroup.rotation.z = side * 0.22;
+
+    return armGroup;
+  }
+
+  const armL = makeArm(-1);
+  const armR = makeArm(1);
+  person.add(armL);
+  person.add(armR);
+
+  // Connected legs: each leg is one pivoting group with pant leg and shoe.
+  function makeLeg(side) {
+    const legGroup = new THREE.Group();
+
+    const leg = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.09, 0.105, 0.78, 12),
+      pantsMat
+    );
+    leg.position.set(0, -0.38, 0);
+    leg.castShadow = true;
+    legGroup.add(leg);
+
+    const shoe = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.12, 0.38),
+      shoeMat
+    );
+    shoe.position.set(0, -0.82, 0.10);
+    shoe.castShadow = true;
+    legGroup.add(shoe);
+
+    legGroup.position.set(side * 0.15, 0.95, 0);
+    return legGroup;
+  }
+
+  const legL = makeLeg(-1);
+  const legR = makeLeg(1);
+  person.add(legL);
+  person.add(legR);
+
+  person.userData = {
+    speed: config.speed,
+    direction: config.direction,
+    active: true,
+    startX: config.startX,
+    z: config.z,
+    stepPhase: Math.random() * Math.PI * 2,
+    parts: {
+      torso,
+      head,
+      armL,
+      armR,
+      legL,
+      legR
+    }
+  };
+
+  person.position.set(config.startX, 0.1, config.z);
+
+  scene.add(person);
+  return person;
+}
+
+function startStudy() {
+  document.getElementById("startScreen").classList.add("hidden");
+  studyStarted = true;
+  loadTrial(0);
+}
+
+function clearActors() {
+  trafficCars.forEach(car => scene.remove(car));
+  pedestrians.forEach(person => scene.remove(person));
+  trafficCars = [];
+  pedestrians = [];
+}
+
+function loadTrial(index) {
+  if (index >= scenarios.length) {
+    finishStudy();
+    return;
+  }
+
+  clearActors();
+
+  trialIndex = index;
+  const s = scenarios[trialIndex];
+
+  ego.position.set(EGO_LANE_X, 0.6, 35);
+  ego.rotation.y = 0;
+
+  trafficCars = s.cars.map(createTrafficCar);
+  pedestrians = s.pedestrians.map(createPedestrian);
+
+  speed = 0;
+  steering = 0;
+  trialEnded = false;
+  collisionOccurred = false;
+  pedestrianConflictOccurred = false;
+  laneDepartureOccurred = false;
+  participantYielded = false;
+  participantWentAfterClear = false;
+  firstYieldReactionTime = null;
+  firstConflictTime = null;
+  hadConflictThisTrial = false;
+  systemDecision = "GO";
+  lastSystemDecision = "GO";
+  systemReason = "No active conflict detected.";
+  trialStartTime = performance.now();
+
+  document.getElementById("trialVal").textContent = `${trialIndex + 1} / ${scenarios.length}`;
+  document.getElementById("contextVal").textContent = s.name;
+  document.getElementById("conditionVal").textContent =
+    s.condition === "HUD_ON" ? "ROWNS HUD ON" : "Baseline: No HUD";
+
+  document.getElementById("rightPanel").style.display =
+    s.condition === "HUD_ON" ? "block" : "none";
+
+  document.getElementById("alert").style.display = "none";
+  document.getElementById("clearPrompt").style.display = "none";
+}
+
+function onKeyDown(e) {
+  keys[e.key.toLowerCase()] = true;
+
+  if (e.key === " ") {
+    emergencyBrake();
+  }
+
+  if (e.key.toLowerCase() === "r" && studyStarted) {
+    loadTrial(trialIndex);
+  }
+}
+
+function emergencyBrake() {
+  if (!studyStarted || trialEnded) return;
+
+  speed *= 0.10;
+
+  if (systemDecision === "YIELD") {
+    participantYielded = true;
+    if (firstConflictTime !== null && firstYieldReactionTime === null) {
+      firstYieldReactionTime = Math.round(performance.now() - firstConflictTime);
+    }
+  }
+}
+
+function updatePhysics() {
+  if (!studyStarted || trialEnded) return;
+
+  if (keys["w"] || keys["arrowup"]) speed += 0.035;
+  if (keys["s"] || keys["arrowdown"]) speed -= 0.065;
+
+  speed *= 0.985;
+  speed = THREE.MathUtils.clamp(speed, 0, 1.15);
+
+  if (keys["a"]) steering += 0.014;
+  if (keys["d"]) steering -= 0.014;
+
+  steering *= 0.88;
+  steering = THREE.MathUtils.clamp(steering, -0.042, 0.042);
+
+  ego.rotation.y += steering * speed;
+  ego.position.x -= Math.sin(ego.rotation.y) * speed;
+  ego.position.z -= Math.cos(ego.rotation.y) * speed;
+
+  // Soft lane centering so the car behaves like it is in a lane unless the user intentionally steers.
+  if (!keys["a"] && !keys["d"]) {
+    ego.position.x += (EGO_LANE_X - ego.position.x) * 0.018;
+    ego.rotation.y *= 0.965;
+  }
+
+  if (Math.abs(ego.position.x - EGO_LANE_X) > 4.8) {
+    laneDepartureOccurred = true;
+  }
+
+  trafficCars.forEach(car => {
+    car.position.x += car.userData.direction * car.userData.speed;
+
+    if (car.position.x > 105 || car.position.x < -105) {
+      car.userData.active = false;
+    }
+  });
+
+  pedestrians.forEach(person => {
+    const data = person.userData;
+    const parts = data.parts;
+
+    // Move across the crosswalk.
+    person.position.x += data.direction * data.speed;
+
+    // Face walking direction.
+    person.rotation.y = data.direction === 1 ? Math.PI / 2 : -Math.PI / 2;
+
+    // Walking animation.
+    data.stepPhase += 0.13;
+    const swing = Math.sin(data.stepPhase);
+    const counterSwing = Math.sin(data.stepPhase + Math.PI);
+
+    // Body bob and subtle human sway.
+    person.position.y = 0.1 + Math.abs(swing) * 0.05;
+    parts.torso.rotation.z = swing * 0.025;
+    parts.head.rotation.z = swing * 0.018;
+
+    // Connected legs swing from the hips.
+    parts.legL.rotation.x = swing * 0.48;
+    parts.legR.rotation.x = counterSwing * 0.48;
+
+    // Connected arms swing from the shoulders, opposite the legs.
+    parts.armL.rotation.x = counterSwing * 0.42;
+    parts.armR.rotation.x = swing * 0.42;
+
+    if (person.position.x > 16 || person.position.x < -16) {
+      data.active = false;
+    }
+  });
+
+  if (systemDecision === "YIELD" && speed < 0.15) {
+    participantYielded = true;
+    if (firstConflictTime !== null && firstYieldReactionTime === null) {
+      firstYieldReactionTime = Math.round(performance.now() - firstConflictTime);
+    }
+  }
+
+  if (
+    lastSystemDecision === "YIELD" &&
+    systemDecision === "GO" &&
+    speed > 0.25
+  ) {
+    participantWentAfterClear = true;
+  }
+}
+
+function updateCamera() {
+  if (!ego) return;
+
+  const behind = new THREE.Vector3(
+    ego.position.x + Math.sin(ego.rotation.y) * 7,
+    ego.position.y + 4.2,
+    ego.position.z + Math.cos(ego.rotation.y) * 10
+  );
+
+  camera.position.lerp(behind, 0.15);
+
+  const lookAt = new THREE.Vector3(
+    ego.position.x,
+    ego.position.y + 1.25,
+    ego.position.z - 16
+  );
+
+  camera.lookAt(lookAt);
+}
+
+function getConflictState() {
+  const egoApproachingOrAtIntersection =
+    ego.position.z < -27 && ego.position.z > -78;
+
+  let carsInImmediateConflict = 0;
+  let carsApproachingConflict = 0;
+  let pedestriansInCrosswalk = 0;
+  let pedestriansApproachingCrosswalk = 0;
+
+  trafficCars.forEach(car => {
+    const carInIntersection =
+      Math.abs(car.position.x) < 13 &&
+      Math.abs(car.position.z - INTERSECTION_Z) < 12 &&
+      car.userData.active;
+
+    const carApproachingSoon =
+      Math.abs(car.position.x) < 26 &&
+      Math.abs(car.position.z - INTERSECTION_Z) < 12 &&
+      car.userData.active;
+
+    if (carInIntersection) carsInImmediateConflict++;
+    if (carApproachingSoon) carsApproachingConflict++;
+  });
+
+  pedestrians.forEach(person => {
+    const pedInCrosswalk =
+      Math.abs(person.position.x) < 10 &&
+      person.position.z > -50 &&
+      person.position.z < -44 &&
+      person.userData.active;
+
+    const pedApproachingCrosswalk =
+      Math.abs(person.position.x) < 13 &&
+      person.position.z > -51 &&
+      person.position.z < -43 &&
+      person.userData.active;
+
+    if (pedInCrosswalk) pedestriansInCrosswalk++;
+    if (pedApproachingCrosswalk) pedestriansApproachingCrosswalk++;
+  });
+
+  const unsafe =
+    egoApproachingOrAtIntersection &&
+    (carsApproachingConflict > 0 || pedestriansApproachingCrosswalk > 0);
+
+  const immediate =
+    egoApproachingOrAtIntersection &&
+    (carsInImmediateConflict > 0 || pedestriansInCrosswalk > 0);
+
+  return {
+    unsafe,
+    immediate,
+    carsInImmediateConflict,
+    carsApproachingConflict,
+    pedestriansInCrosswalk,
+    pedestriansApproachingCrosswalk,
+    egoApproachingOrAtIntersection
+  };
+}
+
+function evaluateTrial() {
+  if (!studyStarted || trialEnded) return;
+
+  const s = scenarios[trialIndex];
+  const conflict = getConflictState();
+
+  lastSystemDecision = systemDecision;
+
+  if (conflict.unsafe) {
+    systemDecision = "YIELD";
+
+    const reasons = [];
+    if (conflict.carsApproachingConflict > 0) {
+      reasons.push(`${conflict.carsApproachingConflict} vehicle(s) in/near cross-traffic lanes`);
+    }
+    if (conflict.pedestriansApproachingCrosswalk > 0) {
+      reasons.push(`${conflict.pedestriansApproachingCrosswalk} pedestrian(s) in/near crosswalk`);
+    }
+
+    systemReason = reasons.join(" and ") + ". Wait before entering.";
+    hadConflictThisTrial = true;
+
+    if (firstConflictTime === null) {
+      firstConflictTime = performance.now();
+    }
+  } else {
+    systemDecision = "GO";
+    systemReason = hadConflictThisTrial
+      ? "Traffic and crosswalk are now clear. Continue when safe."
+      : "No active vehicle or pedestrian conflict detected.";
+  }
+
+  if (s.condition === "HUD_ON") {
+    updateHUDDecision();
+  }
+
+  const egoInVehicleConflict =
+    Math.abs(ego.position.x) < 9.8 &&
+    ego.position.z < -50 &&
+    ego.position.z > -70;
+
+  const egoAtCrosswalk =
+    Math.abs(ego.position.x) < 9.8 &&
+    ego.position.z < -43 &&
+    ego.position.z > -51;
+
+  if (egoInVehicleConflict && conflict.carsInImmediateConflict > 0) {
+    collisionOccurred = true;
+  }
+
+  if (egoAtCrosswalk && conflict.pedestriansInCrosswalk > 0 && speed > 0.12) {
+    pedestrianConflictOccurred = true;
+    collisionOccurred = true;
+  }
+
+  if (ego.position.z < -98) {
+    if (lastSystemDecision === "YIELD" && systemDecision === "GO") {
+      participantWentAfterClear = true;
+    }
+    endTrial();
+  }
+
+  if (performance.now() - trialStartTime > 30000) {
+    endTrial();
+  }
+}
+
+function updateHUDDecision() {
+  const decisionEl = document.getElementById("decision");
+  const reasonEl = document.getElementById("reason");
+  const alertEl = document.getElementById("alert");
+  const clearEl = document.getElementById("clearPrompt");
+
+  decisionEl.textContent = systemDecision;
+  reasonEl.textContent = systemReason;
+
+  if (systemDecision === "YIELD") {
+    decisionEl.style.color = "#ef4444";
+    alertEl.textContent = systemReason.includes("pedestrian")
+      ? "YIELD — PEDESTRIAN"
+      : "YIELD — CROSS TRAFFIC";
+    alertEl.style.display = "block";
+    clearEl.style.display = "none";
+  } else {
+    decisionEl.style.color = "#22c55e";
+    alertEl.style.display = "none";
+
+    if (hadConflictThisTrial && !trialEnded) {
+      clearEl.style.display = "block";
+      setTimeout(() => {
+        clearEl.style.display = "none";
+      }, 900);
+    } else {
+      clearEl.style.display = "none";
+    }
+  }
+}
+
+function updateHUD() {
+  if (!ego) return;
+
+  const mph = Math.round(speed * 38);
+  document.getElementById("speedVal").textContent = `${mph} mph`;
+
+  const conflict = getConflictState();
+
+  document.getElementById("conflictVal").textContent =
+    conflict.unsafe
+      ? `${conflict.carsApproachingConflict} car(s), ${conflict.pedestriansApproachingCrosswalk} pedestrian(s) unsafe`
+      : "Clear / monitoring";
+
+  const activeCars = trafficCars.filter(car => car.userData.active).length;
+  const activePeds = pedestrians.filter(p => p.userData.active).length;
+  document.getElementById("trafficVal").textContent = `${activeCars} cars · ${activePeds} pedestrians`;
+
+  const laneOffset = ego.position.x - EGO_LANE_X;
+  let laneText = "Right lane";
+  if (laneOffset < -2.8) laneText = "Drifting toward center / left";
+  if (laneOffset > 2.8) laneText = "Drifting toward shoulder";
+  document.getElementById("laneVal").textContent = laneText;
+}
+
+function logFrame() {
+  if (!studyStarted || trialEnded) return;
+
+  const s = scenarios[trialIndex];
+  const conflict = getConflictState();
+
+  logs.push({
+    time: Math.round(performance.now()),
+    trial: trialIndex + 1,
+    condition: s.condition,
+    scenario: s.name,
+    expectedConflict: s.expectedConflict,
+    egoX: ego.position.x.toFixed(2),
+    egoZ: ego.position.z.toFixed(2),
+    laneOffset: (ego.position.x - EGO_LANE_X).toFixed(2),
+    speed: speed.toFixed(3),
+    mph: Math.round(speed * 38),
+    activeCars: trafficCars.filter(car => car.userData.active).length,
+    activePedestrians: pedestrians.filter(p => p.userData.active).length,
+    carsApproachingConflict: conflict.carsApproachingConflict,
+    carsInImmediateConflict: conflict.carsInImmediateConflict,
+    pedestriansApproachingCrosswalk: conflict.pedestriansApproachingCrosswalk,
+    pedestriansInCrosswalk: conflict.pedestriansInCrosswalk,
+    systemDecision,
+    participantYielded,
+    participantWentAfterClear,
+    collisionOccurred,
+    pedestrianConflictOccurred,
+    laneDepartureOccurred,
+    firstYieldReactionTime
+  });
+}
+
+function endTrial() {
+  if (trialEnded) return;
+
+  trialEnded = true;
+  document.getElementById("alert").style.display = "none";
+  document.getElementById("clearPrompt").style.display = "none";
+
+  const s = scenarios[trialIndex];
+
+  let correct = false;
+
+  if (s.expectedConflict) {
+    correct = participantYielded && !collisionOccurred;
+  } else {
+    correct = !collisionOccurred && !laneDepartureOccurred;
+  }
+
+  logs.push({
+    time: Math.round(performance.now()),
+    trial: trialIndex + 1,
+    condition: s.condition,
+    scenario: s.name,
+    expectedConflict: s.expectedConflict,
+    egoX: ego.position.x.toFixed(2),
+    egoZ: ego.position.z.toFixed(2),
+    laneOffset: (ego.position.x - EGO_LANE_X).toFixed(2),
+    speed: speed.toFixed(3),
+    mph: Math.round(speed * 38),
+    activeCars: trafficCars.filter(car => car.userData.active).length,
+    activePedestrians: pedestrians.filter(p => p.userData.active).length,
+    carsApproachingConflict: 0,
+    carsInImmediateConflict: 0,
+    pedestriansApproachingCrosswalk: 0,
+    pedestriansInCrosswalk: 0,
+    systemDecision,
+    participantYielded,
+    participantWentAfterClear,
+    collisionOccurred,
+    pedestrianConflictOccurred,
+    laneDepartureOccurred,
+    firstYieldReactionTime,
+    trialComplete: true,
+    correct
+  });
+
+  setTimeout(() => {
+    loadTrial(trialIndex + 1);
+  }, 900);
+}
+
+function finishStudy() {
+  studyStarted = false;
+  clearActors();
+
+  const rows = logs.filter(r => r.trialComplete);
+  const total = rows.length;
+  const correct = rows.filter(r => r.correct).length;
+  const collisions = rows.filter(r => r.collisionOccurred).length;
+
+  const rts = rows
+    .map(r => Number(r.firstYieldReactionTime))
+    .filter(v => !Number.isNaN(v) && v > 0);
+
+  const avgRT = rts.length
+    ? Math.round(rts.reduce((a, b) => a + b, 0) / rts.length)
+    : 0;
+
+  document.getElementById("accMetric").textContent =
+    total ? Math.round((correct / total) * 100) + "%" : "0%";
+
+  document.getElementById("collisionMetric").textContent = collisions;
+  document.getElementById("rtMetric").textContent = `${avgRT} ms`;
+  document.getElementById("trialMetric").textContent = total;
+
+  document.getElementById("endScreen").classList.remove("hidden");
+}
+
+function downloadCSV() {
+  if (logs.length === 0) return;
+
+  const headers = Object.keys(logs[0]);
+
+  const rows = logs.map(row =>
+    headers.map(h => {
+      const value = row[h] === undefined ? "" : String(row[h]);
+      return `"${value.replace(/"/g, '""')}"`;
+    }).join(",")
+  );
+
+  const csv = headers.join(",") + "\n" + rows.join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "rowns_lane_pedestrian_study_data.csv";
+  a.click();
+
+  URL.revokeObjectURL(url);
+}
+
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  updatePhysics();
+  updateCamera();
+  evaluateTrial();
+  updateHUD();
+
+  if (frameCount % 8 === 0) {
+    logFrame();
+  }
+
+  frameCount++;
+  renderer.render(scene, camera);
+}
+</script>
+</body>
+</html>
